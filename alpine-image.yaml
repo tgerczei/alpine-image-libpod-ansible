@@ -1,0 +1,50 @@
+---
+- name: build Alpine application image
+  hosts: localhost
+  gather_facts: false
+  vars:
+    default_alpine_version: 3.11.5
+  vars_prompt:
+    - name: aws_account
+      prompt: Please specify AWS ECR account ID
+      private: no
+    - name: aws_region
+      prompt: Please specify AWS region
+      default: "{{ lookup('env', 'AWS_REGION') }}"
+      private: no
+    - name: alpine_version
+      prompt: Please specify Alpine Linux version
+      default: "{{ default_alpine_version }}"
+      private: no
+    - name: package_name
+      prompt: Please specify package name
+      private: no
+  tasks:
+    - name: sanity check
+      assert:
+        that: package_name | length > 0
+        fail_msg: no package name provided
+
+    - name: obtain package information
+      uri:
+       url: "https://pkgs.alpinelinux.org/packages?name={{ package_name }}&branch=v{{ alpine_version.split('.')[0:2] | join('.') }}&arch=x86_64"
+       return_content: yes
+      register: pkg_query
+
+    - name: configure image version
+      replace:
+        path: "{{ lookup('env', 'HOME') }}/alpine-{{ package_name }}/Dockerfile"
+        regexp: '^FROM alpine:.*$'
+        replace: "FROM alpine:{{ alpine_version }}"
+
+    - name: build image
+      podman_image:
+        name: "{{ ecr_registry }}/{{ package_name }}:alpine-{{ alpine_version }}-{{ package_version }}"
+        path: "{{ lookup('env', 'HOME') }}/alpine-{{ package_name }}/"
+      vars:
+        ecr_registry: "{{ aws_account }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
+        response_lines: "{{ ( pkg_query.content | trim ).split('\n') }}"
+        info_titles: "{{ response_lines | select('search', '<th>') | map('regex_replace', '<th>(.*)</th>', '\\1') | map('trim') | list }}"
+        info_values: "{{ response_lines | select('search', '<td.*>') | map('regex_replace', '<td(.*)>(.*)</td>', '\\2')| map('trim') | list }}"
+        package_info: "{{ dict(info_titles | zip(info_values)) }}"
+        package_version: "{{ package_info.Version }}"
