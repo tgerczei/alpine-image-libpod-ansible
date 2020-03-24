@@ -20,3 +20,6 @@ Developed and tested on Gentoo GNU/Linux with ZFS via fuse-overlayfs and crun in
 
 ### Invocation
 ansible-playbook alpine-image.yaml
+
+#### Credits
+Gerard Lynch for the [HTML parsing hint](https://gist.github.com/halberom/e8748635d8dd6e363b208a810eb70bc7)
