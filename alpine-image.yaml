@@ -19,17 +19,33 @@
     - name: package_name
       prompt: Please specify package name
       private: no
+    - name: package_version
+      prompt: Please specify package version
+      private: no
   tasks:
     - name: sanity check
       assert:
         that: package_name | length > 0
         fail_msg: no package name provided
 
-    - name: obtain package information
-      uri:
-       url: "https://pkgs.alpinelinux.org/packages?name={{ package_name }}&branch=v{{ alpine_version.split('.')[0:2] | join('.') }}&arch=x86_64"
-       return_content: yes
-      register: pkg_query
+    - name: obtain package version
+      block:
+        - name: obtain package information
+          uri:
+           url: "https://pkgs.alpinelinux.org/packages?name={{ package_name }}&branch=v{{ alpine_version.split('.')[0:2] | join('.') }}&arch=x86_64"
+           return_content: yes
+          register: pkg_query
+
+        - name: extract package version
+          set_fact:
+            package_version: "{{ package_info.Version }}"
+          vars:
+            response_lines: "{{ ( pkg_query.content | trim ).split('\n') }}"
+            info_titles: "{{ response_lines | select('search', '<th>') | map('regex_replace', '<th>(.*)</th>', '\\1') | map('trim') | list }}"
+            info_values: "{{ response_lines | select('search', '<td.*>') | map('regex_replace', '<td(.*)>(.*)</td>', '\\2')| map('trim') | list }}"
+            package_info: "{{ dict(info_titles | zip(info_values)) }}"
+
+      when: package_version | length == 0
 
     - name: configure image version
       replace:
@@ -43,8 +59,3 @@
         path: "{{ lookup('env', 'HOME') }}/alpine-{{ package_name }}/"
       vars:
         ecr_registry: "{{ aws_account }}.dkr.ecr.{{ aws_region }}.amazonaws.com"
-        response_lines: "{{ ( pkg_query.content | trim ).split('\n') }}"
-        info_titles: "{{ response_lines | select('search', '<th>') | map('regex_replace', '<th>(.*)</th>', '\\1') | map('trim') | list }}"
-        info_values: "{{ response_lines | select('search', '<td.*>') | map('regex_replace', '<td(.*)>(.*)</td>', '\\2')| map('trim') | list }}"
-        package_info: "{{ dict(info_titles | zip(info_values)) }}"
-        package_version: "{{ package_info.Version }}"
